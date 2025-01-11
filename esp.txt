@@ -1,0 +1,172 @@
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+
+local localPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local espEnabled = false
+local tracersEnabled = false
+
+
+local espObjects = {}
+local tracerObjects = {}
+
+
+local ESP_SETTINGS = {
+    BOX_COLOR = Color3.fromRGB(255, 0, 0),
+    BOX_THICKNESS = 2,
+    NAME_COLOR = Color3.fromRGB(255, 255, 255),
+    NAME_SIZE = 14,
+    MAX_DISTANCE = 1000,
+    TEAM_CHECK = false -- Set to true if you want to exclude teammates
+}
+
+
+local function createDrawing(type, properties)
+    local object = Drawing.new(type)
+    for property, value in pairs(properties) do
+        object[property] = value
+    end
+    return object
+end
+
+local function isPlayerValid(player)
+    return player.Character 
+       and player.Character:FindFirstChild("HumanoidRootPart") 
+       and player.Character:FindFirstChild("Humanoid") 
+       and player.Character.Humanoid.Health > 0
+end
+
+local function shouldShowESP(player)
+    if player == localPlayer then return false end
+    if ESP_SETTINGS.TEAM_CHECK and player.Team == localPlayer.Team then return false end
+    return true
+end
+
+
+local function createESPForPlayer(player)
+    if espObjects[player] then return end
+    
+    espObjects[player] = {
+        box = createDrawing("Square", {
+            Thickness = ESP_SETTINGS.BOX_THICKNESS,
+            Color = ESP_SETTINGS.BOX_COLOR,
+            Filled = false,
+            Transparency = 1,
+            Visible = false
+        }),
+        name = createDrawing("Text", {
+            Text = player.Name,
+            Size = ESP_SETTINGS.NAME_SIZE,
+            Center = true,
+            Outline = true,
+            Color = ESP_SETTINGS.NAME_COLOR,
+            Visible = false
+        }),
+        tracer = createDrawing("Line", {
+            Thickness = 1,
+            Color = ESP_SETTINGS.BOX_COLOR,
+            Transparency = 1,
+            Visible = false
+        })
+    }
+end
+
+local function removeESPFromPlayer(player)
+    if not espObjects[player] then return end
+    
+    for _, object in pairs(espObjects[player]) do
+        object:Remove()
+    end
+    espObjects[player] = nil
+end
+
+local function updateESP()
+    for player, objects in pairs(espObjects) do
+        if not isPlayerValid(player) or not shouldShowESP(player) then
+            objects.box.Visible = false
+            objects.name.Visible = false
+            objects.tracer.Visible = false
+            continue
+        end
+
+        local character = player.Character
+        local hrp = character.HumanoidRootPart
+        local humanoid = character.Humanoid
+        
+   
+        local vector, onScreen = camera:WorldToViewportPoint(hrp.Position)
+        local distance = (hrp.Position - camera.CFrame.Position).Magnitude
+        
+        if not onScreen or distance > ESP_SETTINGS.MAX_DISTANCE then
+            objects.box.Visible = false
+            objects.name.Visible = false
+            objects.tracer.Visible = false
+            continue
+        end
+        
+ 
+        local size = Vector2.new(2000 / vector.Z, 3000 / vector.Z)
+        local pos = Vector2.new(vector.X - size.X / 2, vector.Y - size.Y / 2)
+        
+       
+        objects.box.Size = size
+        objects.box.Position = pos
+        objects.box.Visible = espEnabled
+        
+        objects.name.Position = Vector2.new(vector.X, pos.Y - objects.name.TextBounds.Y - 2)
+        objects.name.Visible = espEnabled
+        
+      
+        if tracersEnabled then
+            objects.tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+            objects.tracer.To = Vector2.new(vector.X, vector.Y)
+            objects.tracer.Visible = true
+        else
+            objects.tracer.Visible = false
+        end
+    end
+end
+
+
+Players.PlayerAdded:Connect(createESPForPlayer)
+Players.PlayerRemoving:Connect(removeESPFromPlayer)
+
+
+for _, player in ipairs(Players:GetPlayers()) do
+    createESPForPlayer(player)
+end
+
+
+RunService.RenderStepped:Connect(function()
+    if espEnabled or tracersEnabled then
+        updateESP()
+    end
+end)
+
+
+local function toggleESP()
+    espEnabled = not espEnabled
+    if not espEnabled then
+        for _, objects in pairs(espObjects) do
+            objects.box.Visible = false
+            objects.name.Visible = false
+        end
+    end
+end
+
+local function toggleTracers()
+    tracersEnabled = not tracersEnabled
+    if not tracersEnabled then
+        for _, objects in pairs(espObjects) do
+            objects.tracer.Visible = false
+        end
+    end
+end
+
+
+return {
+    toggleESP = toggleESP,
+    toggleTracers = toggleTracers
+}
